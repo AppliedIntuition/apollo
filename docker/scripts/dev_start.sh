@@ -171,7 +171,7 @@ function main(){
 }
 
 function setup_simian(){
-    RUN apt-get update
+    apt-get update
     apt-get install -y --no-install-recommends \
       git build-essential \
       cmake clang \
