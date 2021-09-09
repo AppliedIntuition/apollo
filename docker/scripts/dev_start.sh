@@ -170,4 +170,21 @@ function main(){
     fi
 }
 
+function setup_simian(){
+    RUN apt-get update
+    apt-get install -y --no-install-recommends \
+      git build-essential \
+      cmake clang \
+      libgeographic-dev geographiclib-tools \
+      libeigen3-dev
+    cp docker/protobuf_position_independent_code.patch /
+    cd /tmp
+    GIT_SSL_NO_VERIFY=true git clone --branch v1.30.2 --depth 1 --recurse https://github.com/grpc/grpc.git
+    cd /tmp/grpc
+    git apply /protobuf_position_independent_code.patch
+    bash /tmp/grpc/test/distrib/cpp/run_distrib_test_cmake.sh
+    rm -rf /tmp/grpc
+}
+
 main
+setup_simian
