@@ -1,0 +1,93 @@
+#pragma once
+
+/*
+  A customer's AV stack gets integrated into Simian by implementing the
+  ADPBridge class.
+
+  This class gets instantiated inside a grpc server that runs inside the
+  customer docker container. The Simian simulation engine, which runs
+  in the Applied docker, calls that grpc server as appropriate during
+  a simulation run. The class can override a number of methods to
+  extend or customize some of the generic behavior, and there are a
+  few methods that must be provided.
+
+  The other constants and methods start to matter for specific
+  initialization and finalization needs.
+*/
+
+#include <cstdint>
+#include <memory>
+
+#include "applied/customer_stack_base.h"
+#include "interface/log_reader.h"
+
+class ADPBridge : public simian_public::CustomerStackBase {
+ public:
+  explicit ADPBridge(const std::string& ego_name);
+
+  const char* GetStackVersion() override;
+
+  int32_t StackSetup() override;
+
+  int32_t Initialize() override;
+
+  int32_t Finalize() override;
+
+  int32_t ChannelListenSetup(const simian_public::simulator::v2::Channel& channel) override;
+
+  int32_t ChannelListenTeardown(const simian_public::simulator::v2::Channel& channel) override;
+
+  int32_t ChannelPublishSetup(const simian_public::simulator::v2::Channel& channel) override;
+
+  int32_t ChannelPublishSend(const simian_public::simulator::v2::Channel& channel) override;
+
+  int32_t ChannelPublishTeardown(const simian_public::simulator::v2::Channel& channel) override;
+
+  int32_t GetDefaultRate(const simian_public::simulator::v2::Channel& channel) override;
+
+  int32_t LogOpen(const simian_public::simulator::v2::LogOpenOptions& options,
+                  simian_public::simulator::v2::LogOpenOutput* output) override;
+
+  int32_t LogRead(const simian_public::simulator::v2::LogReadOptions& options,
+                  simian_public::simulator::v2::LogReadOutput* output) override;
+
+  int32_t LogClose(const simian_public::simulator::v2::LogCloseOptions& options) override;
+
+  int32_t ConvertTimeFromSimian(const std::string_view channel_name,
+                                const google::protobuf::Timestamp& time) override;
+
+  int32_t ConvertPoseFromSimian(const std::string_view channel_name,
+                                const simian_public::simulator::v2::Pose& pose) override;
+
+  int32_t ConvertActorSensorFromSimian(
+      const std::string_view channel_name,
+      const simian_public::perception::PerceptionChannel::ActorSensor& actor_sensor) override;
+
+  int32_t ConvertPredictedControlFromSimian(
+      const std::string_view channel_name,
+      const simian_public::motion_model::Input& predicted_controls) override;
+
+  int32_t ConvertMotionFeedbackFromSimian(
+      const std::string_view channel_name,
+      const simian_public::motion_model::Feedback& motion_feedback) override;
+
+  int32_t ConvertEgoTriggersFromSimian(
+      const std::string_view channel_name,
+      const simian_public::simulator::v2::Trigger& ego_triggers) override;
+
+  int32_t ConvertTripAgentFromSimian(
+      const std::string_view channel_name,
+      const simian_public::common::TripAgentOutput& trip_agent) override;
+
+  int32_t ConvertControlsToSimian(const std::string_view channel_name,
+                                  simian_public::motion_model::Input* ego_input) override;
+
+  int32_t ConvertStackStateToSimian(const std::string_view channel_name,
+                                    simian_public::simulator::v2::StackState* stack_state) override;
+
+ private:
+  std::unique_ptr<LogReader> log_reader_;
+  Mailbox mailbox_;
+  simian_public::motion_model::Input predicted_controls_;
+  const std::string kStackVersion_ = "{{ CUSTOMER_NAME }}_bridge_v1";
+};

@@ -1,0 +1,426 @@
+/*
+ * Copyright 2020 Applied Intuition, Inc.
+ *
+ * {{ CUSTOMER_NAME }} integration code
+ */
+#include "applied/stack_interface_c_v2.h"
+
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <vector>
+
+#include "applied/customer_stack_base.h"
+#include "interface/customer_stack.h"
+
+namespace {
+
+simian_public::CustomerStackBase* AsSimianCustomer(void* self) {
+  return static_cast<simian_public::CustomerStackBase*>(self);
+}
+
+simian_public::simulator::v2::Channel ConvertChannel(const SimianChannel& simian_channel) {
+  simian_public::simulator::v2::Channel result;
+  result.set_name(simian_channel.name);
+  result.set_type(static_cast<simian_public::simulator::v2::ChannelType>(simian_channel.type));
+  return result;
+}
+
+}  // namespace
+
+CustomerInterfaceVersion customer_interface_v2__get_version() {
+  return CUSTOMER_INTERFACE_VERSION_2_1;
+}
+
+void* customer_interface_v2__create(const char* name) { return new ADPBridge(name); }
+
+void customer_interface_v2__destroy(void* self) {
+  // This memory was allocated in customer_interface_v2__create.
+  delete AsSimianCustomer(self);
+}
+
+int32_t customer_interface_v2__set_startup_options(
+    // This is simian_public.simulator.CustomerStartupOptions
+    void* self, uint8_t* startup_options, uint64_t startup_options_size) {
+  // Deprecated in favor of customer_interface_v2_1__set_startup_options.
+  return 0;
+}
+
+int32_t customer_interface_v2_1__set_startup_options(
+    // This is simian_public.simulator.v2.InterfaceStartupOptions
+    void* self, uint8_t* startup_options, uint64_t startup_options_size) {
+  simian_public::simulator::v2::InterfaceStartupOptions options;
+  if (!options.ParseFromArray(startup_options, startup_options_size)) {
+    std::cout << "Customer interface failed to parse startup options!" << std::endl;
+    std::cout.flush();
+    return simian_public::CustomerStackBase::kProtoSerializationError;
+  }
+  AsSimianCustomer(self)->SetStartupOptionsInternal(options);
+  return 0;
+}
+
+const char* customer_interface_v2__get_stack_version(void* self) {
+  return AsSimianCustomer(self)->GetStackVersion();
+}
+
+int32_t customer_interface_v2__get_default_rate(void* self, const SimianChannel* channel) {
+  return AsSimianCustomer(self)->GetDefaultRate(ConvertChannel(*channel));
+}
+
+int64_t customer_interface_v2__get_default_period_ns(void* self, const SimianChannel* channel) {
+  return AsSimianCustomer(self)->GetDefaultPeriodNs(ConvertChannel(*channel));
+}
+
+//////////////////////////////////////////////////
+// Setup/teardown functions
+//////////////////////////////////////////////////
+
+int32_t customer_interface_v2__middleware_setup(void* self) {
+  return AsSimianCustomer(self)->MiddlewareSetup();
+}
+
+int32_t customer_interface_v2__middleware_teardown(void* self) {
+  return AsSimianCustomer(self)->MiddlewareTeardown();
+}
+
+int32_t customer_interface_v2__stack_setup(void* self) {
+  return AsSimianCustomer(self)->StackSetup();
+}
+
+int32_t customer_interface_v2__stack_teardown(void* self) {
+  return AsSimianCustomer(self)->StackTeardown();
+}
+
+int32_t customer_interface_v2__recording_setup(void* self, const char* recording_path) {
+  return AsSimianCustomer(self)->RecordingSetup(recording_path);
+}
+
+int32_t customer_interface_v2__recording_teardown(void* self) {
+  return AsSimianCustomer(self)->RecordingTeardown();
+}
+
+int32_t customer_interface_v2__visualization_setup(void* self) {
+  return AsSimianCustomer(self)->VisualizationSetup();
+}
+
+int32_t customer_interface_v2__visualization_teardown(void* self) {
+  return AsSimianCustomer(self)->VisualizationTeardown();
+}
+
+int32_t customer_interface_v2__initialize(void* self) {
+  return AsSimianCustomer(self)->Initialize();
+}
+
+int32_t customer_interface_v2__finalize(void* self) { return AsSimianCustomer(self)->Finalize(); }
+
+int32_t customer_interface_v2__simulation_summary(void* self, uint8_t* sim_summary,
+                                                  uint64_t sim_summary_size) {
+  simian_public::common::SimulationSummary summary;
+  if (!summary.ParseFromArray(sim_summary, sim_summary_size)) {
+    std::cout << "Customer interface failed to parse simulation summary" << std::endl;
+    std::cout.flush();
+    return simian_public::CustomerStackBase::kProtoSerializationError;
+  }
+  return AsSimianCustomer(self)->SimulationSummary(summary);
+}
+
+//////////////////////////////////////////////////
+// Stack data-related functions
+//////////////////////////////////////////////////
+
+int32_t customer_interface_v2__listen_setup(void* self, const SimianChannel* channel) {
+  return AsSimianCustomer(self)->ChannelListenSetup(ConvertChannel(*channel));
+}
+
+int32_t customer_interface_v2__listen_teardown(void* self, const SimianChannel* channel) {
+  return AsSimianCustomer(self)->ChannelListenTeardown(ConvertChannel(*channel));
+}
+
+int32_t customer_interface_v2__publish_setup(void* self, const SimianChannel* channel) {
+  return AsSimianCustomer(self)->ChannelPublishSetup(ConvertChannel(*channel));
+}
+
+int32_t customer_interface_v2__publish_teardown(void* self, const SimianChannel* channel) {
+  return AsSimianCustomer(self)->ChannelPublishTeardown(ConvertChannel(*channel));
+}
+
+int32_t customer_interface_v2__publish_send(void* self, const SimianChannel* channel) {
+  return AsSimianCustomer(self)->ChannelPublishSend(ConvertChannel(*channel));
+}
+
+//////////////////////////////////////////////////
+// Simian-related functions
+//////////////////////////////////////////////////
+
+namespace {
+
+template <typename Proto>
+int32_t ConvertToSimian(
+    simian_public::CustomerStackBase* const customer_stack,
+    const std::function<int32_t(simian_public::CustomerStackBase&, const std::string&, Proto*)>
+        convert_func,
+    const SimianChannel* channel, uint8_t** output, uint64_t* output_size) {
+  Proto proto;
+  const int32_t result = convert_func(*customer_stack, channel->name, &proto);
+  if (result != 0) {
+    return result;
+  }
+  *output_size = proto.ByteSize();
+  *output = new uint8_t[*output_size];
+  return proto.SerializeToArray(*output, *output_size)
+             ? 0
+             : simian_public::CustomerStackBase::kProtoSerializationError;
+}
+
+template <typename Proto>
+int32_t ConvertFromSimian(simian_public::CustomerStackBase* const customer_stack,
+                          const std::function<int32_t(simian_public::CustomerStackBase&,
+                                                      const std::string&, const Proto&)>
+                              convert_func,
+                          const SimianChannel* channel, const uint8_t* input, uint64_t input_size) {
+  Proto proto;
+  if (!proto.ParseFromArray(input, input_size)) {
+    return simian_public::CustomerStackBase::kProtoSerializationError;
+  }
+  return convert_func(*customer_stack, channel->name, proto);
+}
+
+}  // namespace
+
+int32_t customer_interface_v2__convert__to_simian(void* self, const SimianChannel* channel,
+                                                  uint8_t** output, uint64_t* output_size) {
+  auto* const customer_stack = AsSimianCustomer(self);
+  if (channel->type == simian_public::simulator::v2::CONTROLS) {
+    return ConvertToSimian<simian_public::motion_model::Input>(
+        customer_stack, &simian_public::CustomerStackBase::ConvertControlsToSimian, channel, output,
+        output_size);
+  } else if (channel->type == simian_public::simulator::v2::STACK_STATE) {
+    return ConvertToSimian<simian_public::simulator::v2::StackState>(
+        customer_stack, &simian_public::CustomerStackBase::ConvertStackStateToSimian, channel,
+        output, output_size);
+  }
+  std::cout << "Unsupported channel requested in convert__to_simian. Name " << channel->name
+            << " and type " << channel->type << std::endl;
+  return -1;
+}
+
+int32_t customer_interface_v2__convert__to_simian_free(void* self, uint8_t* output,
+                                                       uint64_t output_size) {
+  // This memory was allocated in customer_interface_v2__convert__to_simian.
+  delete[] output;
+  return 0;
+}
+
+int32_t customer_interface_v2__convert__from_simian(void* self, const SimianChannel* channel,
+                                                    const uint8_t* input, uint64_t input_size) {
+  auto* const customer_stack = AsSimianCustomer(self);
+  switch (channel->type) {
+    case simian_public::simulator::v2::TIME:
+      return ConvertFromSimian<google::protobuf::Timestamp>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertTimeFromSimian, channel, input,
+          input_size);
+    case simian_public::simulator::v2::POSE:
+      return ConvertFromSimian<simian_public::simulator::v2::Pose>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertPoseFromSimian, channel, input,
+          input_size);
+    case simian_public::simulator::v2::LOCALIZATION:
+      return ConvertFromSimian<simian_public::spatial::Pose>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertLocalizationFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::MOTION_FEEDBACK:
+      return ConvertFromSimian<simian_public::motion_model::Feedback>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertMotionFeedbackFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::CONTROLS:
+      return ConvertFromSimian<simian_public::motion_model::Input>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertPredictedControlFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::TRIGGER:
+      return ConvertFromSimian<simian_public::simulator::v2::Trigger>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertEgoTriggersFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::TRIP_AGENT:
+      return ConvertFromSimian<simian_public::common::TripAgentOutput>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertTripAgentFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::STACK_STATE:
+      return ConvertFromSimian<simian_public::simulator::v2::StackState>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertStackStateFromSimian, channel,
+          input, input_size);
+
+    // Sensors
+    case simian_public::simulator::v2::ACTORS:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::ActorSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertActorSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::LANE_SENSOR:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::LaneSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertLaneSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::TRAFFIC_LIGHTS:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::TrafficLightSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertTrafficLightSensorFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::LOCALIZATION_SENSOR:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::LocalizationSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertLocalizationSensorFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::PLANAR_LIDAR:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::PlanarLidarSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertPlanarLidarSensorFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::PLANAR_OCCUPANCY_GRID:
+      return ConvertFromSimian<
+          simian_public::perception::PerceptionChannel::PlanarOccupancyGridSensor>(
+          customer_stack,
+          &simian_public::CustomerStackBase::ConvertPlanarOccupancyGridSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::OCCLUSION_GRID:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::OcclusionGridSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertOcclusionGridSensorFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::FREE_SPACE_SENSOR:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::FreeSpaceSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertFreeSpaceSensorFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::TRAFFIC_LIGHT_BLOCKS:
+      return ConvertFromSimian<
+          simian_public::perception::PerceptionChannel::TrafficLightBlockSensor>(
+          customer_stack,
+          &simian_public::CustomerStackBase::ConvertTrafficLightBlockSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::LOCALIZATION_OBJECT_SENSOR:
+      return ConvertFromSimian<
+          simian_public::perception::PerceptionChannel::LocalizationObjectSensor>(
+          customer_stack,
+          &simian_public::CustomerStackBase::ConvertLocalizationObjectSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::TRAFFIC_SIGN_SENSOR:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::TrafficSignSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertTrafficSignSensorFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::IMU_SENSOR:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::IMUSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertImuSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::WHEEL_SPEED_SENSOR:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::WheelSpeedSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertWheelSpeedSensorFromSimian,
+          channel, input, input_size);
+    case simian_public::simulator::v2::MAP_SENSOR:
+      return ConvertFromSimian<simian_public::perception::PerceptionChannel::MapSensor>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertMapSensorFromSimian, channel,
+          input, input_size);
+
+    // Spectral
+    case simian_public::simulator::v2::LIDAR:
+      return ConvertFromSimian<simian_public::sensor_model::SensorOutput::LidarCloud>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertLidarSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::RADAR:
+      return ConvertFromSimian<simian_public::sensor_model::SensorOutput::RadarTrack>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertRadarSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::CAMERA:
+      return ConvertFromSimian<simian_public::sensor_model::SensorOutput::CameraImage>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertCameraSensorFromSimian, channel,
+          input, input_size);
+    case simian_public::simulator::v2::ULTRASOUND:
+      return ConvertFromSimian<simian_public::sensor_model::SensorOutput::Range>(
+          customer_stack, &simian_public::CustomerStackBase::ConvertUltrasoundSensorFromSimian,
+          channel, input, input_size);
+  }
+
+  std::cout << "Unsupported channel requested in convert__from_simian. Name " << channel->name
+            << " and type " << channel->type << std::endl;
+  return -1;
+}
+
+//////////////////////////////////////////////////
+// Log(stream)-related functions
+//////////////////////////////////////////////////
+
+int32_t customer_interface_v2__log__open(void* self, const uint8_t* input, size_t input_size) {
+  simian_public::simulator::v2::LogOpenOptions options;
+  simian_public::simulator::v2::LogOpenOutput unused_output;
+  if (!options.ParseFromArray(input, input_size)) {
+    return simian_public::CustomerStackBase::kProtoSerializationError;
+  }
+  return AsSimianCustomer(self)->LogOpen(options, &unused_output);
+}
+
+int32_t customer_interface_v2_2__log__open(void* const self,
+                                           const uint8_t* const input,
+                                           const uint64_t input_size,
+                                           uint8_t** const output_buf,
+                                           uint64_t* const output_size) {
+  simian_public::simulator::v2::LogOpenOptions options;
+  simian_public::simulator::v2::LogOpenOutput output;
+  if (!options.ParseFromArray(input, input_size)) {
+    return simian_public::CustomerStackBase::kProtoSerializationError;
+  }
+  const int32_t result = AsSimianCustomer(self)->LogOpen(options, &output);
+  if (result != 0) {
+    *output_buf = nullptr;
+    return result;
+  }
+  *output_size = output.ByteSize();
+  *output_buf = new uint8_t[*output_size];
+  if (!output.SerializeToArray(*output_buf, *output_size)) {
+    return simian_public::CustomerStackBase::kProtoSerializationError;
+  }
+  return 0;
+}
+
+int32_t customer_interface_v2_2__log__open_free(void* self, uint8_t* output,
+                                                uint64_t output_size) {
+  // This memory was allocated in customer_interface_v2_2__log__open.
+  if (output != nullptr) {
+    delete[] output;
+  }
+  return 0;
+}
+
+int32_t customer_interface_v2__log__close(void* self, const uint8_t* input, size_t input_size) {
+  simian_public::simulator::v2::LogCloseOptions opts;
+  if (!opts.ParseFromArray(input, input_size)) {
+    return -1;
+  }
+  return AsSimianCustomer(self)->LogClose(opts);
+}
+
+int32_t customer_interface_v2_1__log__read(void* self, const uint8_t* input, uint64_t input_size,
+                                           uint8_t** output_buf, uint64_t* output_size) {
+  simian_public::simulator::v2::LogReadOptions options;
+  simian_public::simulator::v2::LogReadOutput output;
+  if (!options.ParseFromArray(input, input_size)) {
+    return simian_public::CustomerStackBase::kProtoSerializationError;
+  }
+  const int32_t result = AsSimianCustomer(self)->LogRead(options, &output);
+  if (result != 0) {
+    *output_buf = nullptr;
+    return result;
+  }
+  *output_size = output.ByteSize();
+  *output_buf = new uint8_t[*output_size];
+  if (!output.SerializeToArray(*output_buf, *output_size)) {
+    return -1;
+  }
+  return 0;
+}
+
+int32_t customer_interface_v2_1__log__read_free(void* self, uint8_t* output, uint64_t output_size) {
+  // This memory was allocated in customer_interface_v2_1__log__read.
+  if (output != nullptr) {
+    delete[] output;
+  }
+  return 0;
+}
+
+int32_t customer_interface_v2_1__log__patch(void* self, uint8_t* input, uint64_t input_size) {
+  simian_public::simulator::v2::PatchOptions options;
+  if (!options.ParseFromArray(input, input_size)) {
+    return simian_public::CustomerStackBase::kProtoSerializationError;
+  }
+  return AsSimianCustomer(self)->LogPatch(options);
+}

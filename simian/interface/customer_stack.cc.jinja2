@@ -1,0 +1,389 @@
+/*
+ *  See latest full documentation on V2 interface here:
+ *  https://home.applied.co/manual/simian/latest/#/getting_started/stack_integration/implementing_the_v2_api?id=main
+ *
+ * At sim start time, the functions are called in this order:
+ *   1. Constructor()
+ *   2. SetStartupOptions()
+ *   3. GetStackVersion()
+ *   4. MiddlewareSetup()
+ *   5. RecordingSetup()
+ *   6. StackSetup()
+ *   For Each Channel:
+ *   7. GetDefaultRate()
+ *   8. ListenSetup() / PublishSetup() // Depending on channel
+ *   9. ConvertFromSimian() + PublishSend() // For all channel that source from Simian
+ *   10. Initialize()
+ *
+ * Once the sim starts, the following functions are called until sim end
+ *   1. ConvertToSimian()
+ *   2. ConvertFromSimian() + PublishSend() // For Simian-source channels
+ *
+ * At the end of the sim, the following functions are called in this order:
+ *   1. SimulationSummary()
+ *   2. Finalize()
+ *   For Each Channel:
+ *   3. ListenTeardown() / PublishTeardown() // Depending on channel
+ *   4. StackTeardown()
+ *   5. VisualizationTeardown()
+ *   6. RecordingTeardown()
+ *   7. MiddlewareTeardown()
+ */
+
+#include <iostream>
+
+#include "applied/stack_interface_c_v2.h"
+#include "interface/customer_stack.h"
+
+ADPBridge::ADPBridge(const std::string& ego_name)
+    : simian_public::CustomerStackBase(ego_name) {}
+
+//////////////////////////////////////////////////
+// Setup/teardown functions
+//////////////////////////////////////////////////
+
+const char* ADPBridge::GetStackVersion() { return kStackVersion_.c_str(); }
+
+// Setup your AV stack
+// Use startup_options->scenario_extra_data to tweak how your stack is started
+int32_t ADPBridge::StackSetup() {
+  std::cout << "StackSetup()" << std::endl;
+  std::cout.flush();
+  // Parsing example extra_data in scenario description
+  if (startup_options_.scenario_extra_data().kind_case() == google::protobuf::Value::kStructValue) {
+    const google::protobuf::Struct& extra_data =
+        startup_options_.scenario_extra_data().struct_value();
+    // iterate through the extra_data fields
+    const auto& fields = extra_data.fields();
+    if (fields.count("example_number") != 0 &&
+        fields.at("example_number").kind_case() == google::protobuf::Value::kNumberValue) {
+      const double example_number = fields.at("example_number").number_value();
+      std::cout << "EXAMPLE: Extra Data Value 'example_number' is " << example_number << std::endl;
+    }
+    if (fields.count("example_string") != 0 &&
+        fields.at("example_string").kind_case() == google::protobuf::Value::kStringValue) {
+      const std::string example_string = fields.at("example_string").string_value();
+      std::cout << "EXAMPLE: Extra Data Value 'example_string' is " << example_string << std::endl;
+    }
+    if (fields.count("example_dictionary") != 0 &&
+        fields.at("example_dictionary").kind_case() == google::protobuf::Value::kStructValue) {
+      const auto& struct_fields = fields.at("example_dictionary").struct_value().fields();
+      google::protobuf::Value value1 = struct_fields.at("value1");
+      if (value1.kind_case() == google::protobuf::Value::kStringValue) {
+        const std::string val_str = value1.string_value();
+        std::cout << "EXAMPLE: Extra Data Value 'example_dictionary[value1]' is " << val_str
+                  << std::endl;
+      }
+      std::cout << "EXAMPLE: Extra Data Value 'example_dictionary' has been parsed!" << std::endl;
+    }
+  }
+  return 0;
+}
+
+int32_t ADPBridge::Initialize() {
+  std::cout << "Initialize" << std::endl;
+  return 0;
+}
+
+int32_t ADPBridge::Finalize() {
+  std::cout << "Finalize" << std::endl;
+  return 0;
+}
+
+int32_t ADPBridge::ChannelListenSetup(const simian_public::simulator::v2::Channel& channel) {
+  if (channel.type() == simian_public::simulator::v2::CONTROLS) {
+    std::cout << "Listening to Controls" << std::endl;
+    return 0;
+  } else if (channel.type() == simian_public::simulator::v2::STACK_STATE) {
+    std::cout << "Listening to Stack state" << std::endl;
+    return 0;
+  }
+  return -1;
+}
+
+int32_t ADPBridge::ChannelListenTeardown(const simian_public::simulator::v2::Channel& channel) {
+  if (channel.type() == simian_public::simulator::v2::CONTROLS) {
+    std::cout << "No longer listening to Controls" << std::endl;
+    return 0;
+  } else if (channel.type() == simian_public::simulator::v2::STACK_STATE) {
+    std::cout << "No longer listening to Stack state" << std::endl;
+    return 0;
+  }
+  return -1;
+}
+
+int32_t ADPBridge::ChannelPublishSetup(const simian_public::simulator::v2::Channel& channel) {
+  switch (channel.type()) {
+    case simian_public::simulator::v2::TIME:
+      std::cout << "Setting up publishing Time" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::POSE:
+      std::cout << "Setting up publishing Pose" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::ACTORS:
+      if (channel.name() == "simian_perceived_actors") {
+        std::cout << "Setting up publishing perceived actors" << std::endl;
+        return 0;
+      } else if (channel.name() == "simian_ground_truth_actors") {
+        std::cout << "Setting up publishing ground truth actors" << std::endl;
+        return 0;
+      }
+      return -1;
+    case simian_public::simulator::v2::CONTROLS:
+      std::cout << "Setting up publishing behavior predicted control" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::MOTION_FEEDBACK:
+      std::cout << "Setting up publishing motion feedback" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRIGGER:
+      std::cout << "Setting up publishing trigger" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRIP_AGENT:
+      std::cout << "Setting up publishing trip agent" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::CAMERA:
+      return 0;
+    case simian_public::simulator::v2::LIDAR:
+      return 0;
+    case simian_public::simulator::v2::RADAR:
+      return 0;
+    default:
+      std::cout << "Ignoring publish setup for unsupported channel '" << channel.name() << "'"
+                << std::endl;
+      return 0;
+  }
+}
+
+int32_t ADPBridge::ChannelPublishSend(const simian_public::simulator::v2::Channel& channel) {
+  std::cout << "PublishSend()" << std::endl;
+  std::cout.flush();
+
+  switch (channel.type()) {
+    case simian_public::simulator::v2::TIME:
+      std::cout << "Publishing to Time" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::POSE:
+      std::cout << "Publishing to Pose" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::ACTORS:
+      if (channel.name() == "simian_perceived_actors") {
+        std::cout << "Publishing to perceived actors" << std::endl;
+        return 0;
+      } else if (channel.name() == "simian_ground_truth_actors") {
+        std::cout << "Publishing to ground truth actors" << std::endl;
+        return 0;
+      }
+      return -1;
+    case simian_public::simulator::v2::CONTROLS:
+      std::cout << "Publishing to behavior predicted control" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::MOTION_FEEDBACK:
+      std::cout << "Publishing to motion feedback" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRIGGER:
+      std::cout << "Publishing to trigger" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRIP_AGENT:
+      std::cout << "Publishing to trip agent" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRAFFIC_LIGHTS:
+      std::cout << "Publishing traffic lights" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRAFFIC_SIGN_SENSOR:
+      std::cout << "Publishing traffic signs" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::CAMERA:
+      return 0;
+    case simian_public::simulator::v2::LIDAR:
+      return 0;
+    case simian_public::simulator::v2::RADAR:
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+int32_t ADPBridge::ChannelPublishTeardown(const simian_public::simulator::v2::Channel& channel) {
+  std::cout << "PublishTeardown()" << std::endl;
+  std::cout.flush();
+
+  switch (channel.type()) {
+    case simian_public::simulator::v2::TIME:
+      std::cout << "No longer publishing Time" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::POSE:
+      std::cout << "No longer publishing Pose" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::ACTORS:
+      if (channel.name() == "simian_perceived_actors") {
+        std::cout << "No longer publishing perceived actors" << std::endl;
+        return 0;
+      } else if (channel.name() == "simian_ground_truth_actors") {
+        std::cout << "No longer publishing ground truth actors" << std::endl;
+        return 0;
+      }
+      return -1;
+    case simian_public::simulator::v2::CONTROLS:
+      std::cout << "No longer publishing behavior predicted control" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::MOTION_FEEDBACK:
+      std::cout << "No longer publishing motion feedback" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRIGGER:
+      std::cout << "No longer publishing trigger" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRIP_AGENT:
+      std::cout << "No longer publishing trip agent" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRAFFIC_LIGHTS:
+      std::cout << "No longer publishing traffic lights" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::TRAFFIC_SIGN_SENSOR:
+      std::cout << "No longer publishing traffic signs" << std::endl;
+      return 0;
+    case simian_public::simulator::v2::CAMERA:
+      return 0;
+    case simian_public::simulator::v2::LIDAR:
+      return 0;
+    case simian_public::simulator::v2::RADAR:
+      return 0;
+    default:
+      std::cout << "Ignoring publish teardown for unsupported channel '" << channel.name() << "'"
+                << std::endl;
+      return 0;
+  }
+}
+
+int32_t ADPBridge::GetDefaultRate(const simian_public::simulator::v2::Channel& channel) {
+  std::cout << "GetDefaultRate()" << std::endl;
+  std::cout.flush();
+
+  switch (channel.type()) {
+    case simian_public::simulator::v2::TIME:
+    case simian_public::simulator::v2::POSE:
+    case simian_public::simulator::v2::ACTORS:
+    case simian_public::simulator::v2::STACK_STATE:
+    case simian_public::simulator::v2::CONTROLS:
+    case simian_public::simulator::v2::MOTION_FEEDBACK:
+    case simian_public::simulator::v2::TRIGGER:
+    case simian_public::simulator::v2::TRIP_AGENT:
+    case simian_public::simulator::v2::CAMERA:
+    case simian_public::simulator::v2::LIDAR:
+    case simian_public::simulator::v2::RADAR:
+      return 10;
+    default:
+      return -1;
+  }
+
+  return -1;
+}
+
+//////////////////////////////////////////////////
+// Log(stream)-related functions
+//////////////////////////////////////////////////
+
+int32_t ADPBridge::LogOpen(const simian_public::simulator::v2::LogOpenOptions& options,
+                           simian_public::simulator::v2::LogOpenOutput* output) {
+  log_reader_ = std::make_unique<LogReader>(startup_options_.scenario_extra_data(), &mailbox_);
+  return log_reader_->Open(options, output) ? 0 : -1;
+}
+
+int32_t ADPBridge::LogRead(const simian_public::simulator::v2::LogReadOptions& options,
+                              simian_public::simulator::v2::LogReadOutput* output) {
+  return log_reader_->Read(options, output) ? 0 : -1;
+}
+
+int32_t ADPBridge::LogClose(const simian_public::simulator::v2::LogCloseOptions& options) {
+  bool log_close_successful = log_reader_->Close(options);
+  log_reader_.reset();
+  return log_close_successful ? 0 : -1;
+}
+
+//////////////////////////////////////////////////
+// Core loop functions
+//////////////////////////////////////////////////
+
+int32_t ADPBridge::ConvertTimeFromSimian(const std::string_view channel_name,
+                                            const google::protobuf::Timestamp& time) {
+  std::cout << "ConvertTimeFromSimian()" << std::endl;
+  return 0;
+}
+
+int32_t ADPBridge::ConvertPoseFromSimian(const std::string_view channel_name,
+                                            const simian_public::simulator::v2::Pose& pose) {
+  std::cout << "ConvertPoseFromSimian()" << std::endl;
+
+  simian_public::drawing::Drawing example_drawing;
+  example_drawing.set_name("example drawing");
+  auto* color = example_drawing.mutable_color();
+  color->set_red(255);
+  color->set_green(0);
+  color->set_blue(0);
+  color->set_alpha(0.5);
+  example_drawing.mutable_spline()->set_line_width(3.0);
+  auto* point1 = example_drawing.mutable_spline()->add_points();
+  point1->set_x(pose.sections(0).state().pose().px());
+  point1->set_y(pose.sections(0).state().pose().py());
+  point1->set_z(pose.sections(0).state().pose().pz());
+  auto* point2 = example_drawing.mutable_spline()->add_points();
+  point2->set_x(pose.sections(0).state().pose().px() + 10);
+  point2->set_y(pose.sections(0).state().pose().py());
+  point2->set_z(pose.sections(0).state().pose().pz());
+  SendDrawing(example_drawing);
+
+  return 0;
+}
+
+int32_t ADPBridge::ConvertActorSensorFromSimian(
+    const std::string_view channel_name,
+    const simian_public::perception::PerceptionChannel::ActorSensor& actor_sensor) {
+  std::cout << "ConvertActorSensorFromSimian(): " << channel_name << std::endl;
+  return 0;
+}
+
+int32_t ADPBridge::ConvertPredictedControlFromSimian(
+    const std::string_view channel_name, const simian_public::motion_model::Input& predicted_controls) {
+  std::cout << "ConvertPredictedControlFromSimian()" << std::endl;
+  predicted_controls_.CopyFrom(predicted_controls);
+  return 0;
+}
+
+int32_t ADPBridge::ConvertMotionFeedbackFromSimian(
+    const std::string_view channel_name, const simian_public::motion_model::Feedback& motion_feedback) {
+  std::cout << "ConvertMotionFeedbackFromSimian()" << channel_name << std::endl;
+  return 0;
+}
+
+int32_t ADPBridge::ConvertEgoTriggersFromSimian(
+    const std::string_view channel_name, const simian_public::simulator::v2::Trigger& ego_triggers) {
+  std::cout << "ConvertEgoTriggersFromSimian()" << channel_name << std::endl;
+  return 0;
+}
+
+int32_t ADPBridge::ConvertTripAgentFromSimian(
+    const std::string_view channel_name, const simian_public::common::TripAgentOutput& trip_agent) {
+  std::cout << "ConvertTripAgentFromSimian()" << channel_name << std::endl;
+  return 0;
+}
+
+int32_t ADPBridge::ConvertControlsToSimian(const std::string_view channel_name,
+                                              simian_public::motion_model::Input* ego_input) {
+  std::cout << "ConvertControlsToSimian()" << channel_name << std::endl;
+
+  if (predicted_controls_.motion_command_case() == 0) {
+    std::cout << "No behavior specified in the scenario, please specify "
+              << "one under agents->ego->behaviors" << std::endl;
+    return -1;
+  }
+  ego_input->CopyFrom(predicted_controls_);
+
+  return 0;
+}
+
+int32_t ADPBridge::ConvertStackStateToSimian(
+    const std::string_view channel_name, simian_public::simulator::v2::StackState* stack_state) {
+  std::cout << "ConvertStackStateToSimian()" << channel_name << std::endl;
+
+  stack_state->set_stack_state(simian_public::sim_data::SimulatorInput::ENGAGED);
+  return 0;
+}

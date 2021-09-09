@@ -1,0 +1,18 @@
+
+# build output
+*.so
+*.o
+*.a
+*.gch
+build/
+
+# temporary files
+*~
+
+/.idea
+/.docker_start_config
+/.vscode
+
+# Do not version control generated code
+*.pb.cc
+*.pb.h
